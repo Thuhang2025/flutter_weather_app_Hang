@@ -1,0 +1,921 @@
+Chapter 4 - Weather Application with API Integration
+
+Objective
+In this exercise, you will create a comprehensive weather application using Flutter that fetches real-time weather data from external APIs. This project will help you understand:
+•	RESTful API integration in Flutter
+•	Asynchronous programming with Future and async/await
+•	JSON parsing and data modeling
+•	Error handling and network state management
+•	Location services and geolocation
+•	Caching strategies for offline support
+•	Pull-to-refresh and loading states
+•	Dynamic UI based on weather conditions
+Responsibilities
+As a student, you are expected to:
+1.	API Integration: Connect to weather APIs and handle HTTP requests/responses
+2.	Data Modeling: Create proper model classes for weather data
+3.	Location Services: Implement GPS-based location detection
+4.	UI/UX Design: Create an intuitive and visually appealing weather interface
+5.	State Management: Handle loading, success, and error states effectively
+6.	Offline Support: Implement caching for offline access
+7.	Search Functionality: Allow users to search for weather in different cities
+8.	Error Handling: Manage network errors, invalid inputs, and API failures
+9.	Performance: Optimize API calls and implement efficient data fetching
+ 
+Free Weather APIs
+Recommended Primary API:
+1.	OpenWeatherMap (Recommended for this lab)
+-	Website: https://openweathermap.org/api
+-	Free Tier: 1,000 calls/day, 60 calls/minute
+-	Features: Current weather, 5-day forecast, weather icons
+-	Documentation: https://openweathermap.org/api/one-call-api
+-	Sign up: https://home.openweathermap.org/users/sign_up
+-	Example Endpoints: 
+Current Weather	api.openweathermap.org/data/2.5/weather?q={city}&appid={API_KEY}
+5 Day Forecast	api.openweathermap.org/data/2.5/forecast?q={city}&appid={API_KEY}
+One Call API	api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}&appid={API_KEY}
+
+Alternative/Additional APIs:
+2.	WeatherAPI.com
+-	Website: https://www.weatherapi.com/
+-	Free Tier: 1 million calls/month
+-	Features: Current, forecast, astronomy, timezone
+-	Documentation: https://www.weatherapi.com/docs/
+3.	Open-Meteo
+-	Website: https://open-meteo.com/
+-	Free Tier: Completely free, no API key required
+-	Features: Weather forecast, historical data
+-	Documentation: https://open-meteo.com/en/docs
+4.	Weather.gov (US Only)
+-	Website: https://www.weather.gov/documentation/services-web-api
+-	Free Tier: Completely free, no registration
+-	Features: Current conditions, forecasts for US locations
+-	Limitation: Only covers United States
+5.	Visual Crossing Weather
+-	Website: https://www.visualcrossing.com/weather-api
+-	Free Tier: 1,000 records/day
+-	Features: Historical, forecast, weather statistics
+Resources
+Figma Design
+-	Design Link: N/A
+-	Design Specifications: 
+o	Colors: 
+	Sunny: Primary (#FDB813), Background (#87CEEB)
+	Rainy: Primary (#4A5568), Background (#718096)
+	Cloudy: Primary (#A0AEC0), Background (#CBD5E0)
+	Night: Primary (#2D3748), Background (#1A202C)
+o	Font: SF Pro Display / Roboto
+o	Card elevation: 4dp
+o	Border radius: 20px for cards
+o	Screen padding: 20px
+o	Weather icons: Use API provided icons or custom assets
+Additional Resources
+-	HTTP Package: https://pub.dev/packages/http
+-	Dio (Advanced HTTP): https://pub.dev/packages/dio
+-	Geolocator: https://pub.dev/packages/geolocator
+-	Geocoding: https://pub.dev/packages/geocoding
+-	Shared Preferences: https://pub.dev/packages/shared_preferences
+-	Intl (Date Formatting): https://pub.dev/packages/intl
+-	Cached Network Image: https://pub.dev/packages/cached_network_image
+-	Flutter Dotenv: https://pub.dev/packages/flutter_dotenv
+Instructions
+Step 1: Project Setup
+1.	Create a new Flutter project:
+flutter create weather_app
+cd weather_app
+2.	Add dependencies to pubspec.yaml:
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.1.0
+  geolocator: ^10.1.0
+  geocoding: ^2.1.1
+  provider: ^6.1.1
+  shared_preferences: ^2.2.2
+  intl: ^0.18.1
+  cached_network_image: ^3.3.0
+  flutter_dotenv: ^5.1.0
+  connectivity_plus: ^5.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  mockito: ^5.4.4
+  build_runner: ^2.4.7
+3.	Create .env file for API keys (add to .gitignore):
+OPENWEATHER_API_KEY=your_api_key_here WEATHER_API_KEY=your_backup_api_key_here
+4.	Update .gitignore
+.env
+*.env
+5.	Run: flutter pub get
+Step 2: Project Structure
+lib/
+  main.dart
+  models/
+    weather_model.dart
+    forecast_model.dart
+    location_model.dart
+    hourly_weather_model.dart
+  services/
+    weather_service.dart
+    location_service.dart
+    storage_service.dart
+    connectivity_service.dart
+  providers/
+    weather_provider.dart
+    location_provider.dart
+  screens/
+    home_screen.dart
+    search_screen.dart
+    forecast_screen.dart
+    settings_screen.dart
+  widgets/
+    current_weather_card.dart
+    hourly_forecast_list.dart
+    daily_forecast_card.dart
+    weather_detail_item.dart
+    loading_shimmer.dart
+    error_widget.dart
+  utils/
+    constants.dart
+    weather_icons.dart
+    date_formatter.dart
+  config/
+    api_config.dart
+Step 3: API Setup and Model Classes
+1.	Create API Configuration:
+class ApiConfig {
+  static const String baseUrl = 'https://api.openweathermap.org/data/2.5';
+  static const String apiKey = String.fromEnvironment('OPENWEATHER_API_KEY');
+  
+  // Endpoints
+  static const String currentWeather = '/weather';
+  static const String forecast = '/forecast';
+  static const String oneCall = '/onecall';
+  
+  // Build URL
+  static String buildUrl(String endpoint, Map<String, dynamic> params) {
+    final uri = Uri.parse('$baseUrl$endpoint');
+    params['appid'] = apiKey;
+    params['units'] = 'metric'; // or 'imperial'
+    return uri.replace(queryParameters: params).toString();
+  }
+}
+
+2.	Create Weather Model:
+class WeatherModel {
+  final String cityName;
+  final String country;
+  final double temperature;
+  final double feelsLike;
+  final int humidity;
+  final double windSpeed;
+  final int pressure;
+  final String description;
+  final String icon;
+  final String mainCondition;
+  final DateTime dateTime;
+  final double? tempMin;
+  final double? tempMax;
+  final int? visibility;
+  final int? cloudiness;
+  
+  WeatherModel({
+    required this.cityName,
+    required this.country,
+    required this.temperature,
+    required this.feelsLike,
+    required this.humidity,
+    required this.windSpeed,
+    required this.pressure,
+    required this.description,
+    required this.icon,
+    required this.mainCondition,
+    required this.dateTime,
+    this.tempMin,
+    this.tempMax,
+    this.visibility,
+    this.cloudiness,
+  });
+  
+  factory WeatherModel.fromJson(Map<String, dynamic> json) {
+    return WeatherModel(
+      cityName: json['name'],
+      country: json['sys']['country'],
+      temperature: json['main']['temp'].toDouble(),
+      feelsLike: json['main']['feels_like'].toDouble(),
+      humidity: json['main']['humidity'],
+      windSpeed: json['wind']['speed'].toDouble(),
+      pressure: json['main']['pressure'],
+      description: json['weather'][0]['description'],
+      icon: json['weather'][0]['icon'],
+      mainCondition: json['weather'][0]['main'],
+      dateTime: DateTime.fromMillisecondsSinceEpoch(json['dt'] * 1000),
+      tempMin: json['main']['temp_min']?.toDouble(),
+      tempMax: json['main']['temp_max']?.toDouble(),
+      visibility: json['visibility'],
+      cloudiness: json['clouds']?['all'],
+    );
+  }
+  
+  Map<String, dynamic> toJson() {
+    return {
+      'name': cityName,
+      'sys': {'country': country},
+      'main': {
+        'temp': temperature,
+        'feels_like': feelsLike,
+        'humidity': humidity,
+        'pressure': pressure,
+        'temp_min': tempMin,
+        'temp_max': tempMax,
+      },
+      'wind': {'speed': windSpeed},
+      'weather': [
+        {
+          'description': description,
+          'icon': icon,
+          'main': mainCondition,
+        }
+      ],
+      'dt': dateTime.millisecondsSinceEpoch ~/ 1000,
+      'visibility': visibility,
+      'clouds': {'all': cloudiness},
+    };
+  }
+}
+3.	Create Forecast Model:
+class ForecastModel {
+  final DateTime dateTime;
+  final double temperature;
+  final String description;
+  final String icon;
+  final double tempMin;
+  final double tempMax;
+  final int humidity;
+  final double windSpeed;
+  
+  ForecastModel({
+    required this.dateTime,
+    required this.temperature,
+    required this.description,
+    required this.icon,
+    required this.tempMin,
+    required this.tempMax,
+    required this.humidity,
+    required this.windSpeed,
+  });
+  
+  factory ForecastModel.fromJson(Map<String, dynamic> json) {
+    return ForecastModel(
+      dateTime: DateTime.fromMillisecondsSinceEpoch(json['dt'] * 1000),
+      temperature: json['main']['temp'].toDouble(),
+      description: json['weather'][0]['description'],
+      icon: json['weather'][0]['icon'],
+      tempMin: json['main']['temp_min'].toDouble(),
+      tempMax: json['main']['temp_max'].toDouble(),
+      humidity: json['main']['humidity'],
+      windSpeed: json['wind']['speed'].toDouble(),
+    );
+  }
+}
+
+Step 4: Service Layer Implementation
+1.	Weather Service:
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+
+class WeatherService {
+  final String apiKey;
+  
+  WeatherService({required this.apiKey});
+  
+  // Get current weather by city name
+  Future<WeatherModel> getCurrentWeatherByCity(String cityName) async {
+    try {
+      final url = ApiConfig.buildUrl(
+        ApiConfig.currentWeather,
+        {'q': cityName},
+      );
+      
+      final response = await http.get(Uri.parse(url));
+      
+      if (response.statusCode == 200) {
+        return WeatherModel.fromJson(json.decode(response.body));
+      } else if (response.statusCode == 404) {
+        throw Exception('City not found');
+      } else {
+        throw Exception('Failed to load weather data');
+      }
+    } catch (e) {
+      throw Exception('Error: $e');
+    }
+  }
+  
+  // Get current weather by coordinates
+  Future<WeatherModel> getCurrentWeatherByCoordinates(
+    double lat, 
+    double lon,
+  ) async {
+    try {
+      final url = ApiConfig.buildUrl(
+        ApiConfig.currentWeather,
+        {'lat': lat.toString(), 'lon': lon.toString()},
+      );
+      
+      final response = await http.get(Uri.parse(url));
+      
+      if (response.statusCode == 200) {
+        return WeatherModel.fromJson(json.decode(response.body));
+      } else {
+        throw Exception('Failed to load weather data');
+      }
+    } catch (e) {
+      throw Exception('Error: $e');
+    }
+  }
+  
+  // Get 5-day forecast
+  Future<List<ForecastModel>> getForecast(String cityName) async {
+    try {
+      final url = ApiConfig.buildUrl(
+        ApiConfig.forecast,
+        {'q': cityName},
+      );
+      
+      final response = await http.get(Uri.parse(url));
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final List<dynamic> forecastList = data['list'];
+        
+        return forecastList
+            .map((item) => ForecastModel.fromJson(item))
+            .toList();
+      } else {
+        throw Exception('Failed to load forecast data');
+      }
+    } catch (e) {
+      throw Exception('Error: $e');
+    }
+  }
+  
+  // Get weather icon URL
+  String getIconUrl(String iconCode) {
+    return 'https://openweathermap.org/img/wn/$iconCode@2x.png';
+  }
+}
+2.	Location Service:
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
+
+class LocationService {
+  // Check location permission
+  Future<bool> checkPermission() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      return false;
+    }
+    
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        return false;
+      }
+    }
+    
+    if (permission == LocationPermission.deniedForever) {
+      return false;
+    }
+    
+    return true;
+  }
+  
+  // Get current position
+  Future<Position> getCurrentLocation() async {
+    bool hasPermission = await checkPermission();
+    
+    if (!hasPermission) {
+      throw Exception('Location permission denied');
+    }
+    
+    return await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.high,
+    );
+  }
+  
+  // Get city name from coordinates
+  Future<String> getCityName(double lat, double lon) async {
+    try {
+      List<Placemark> placemarks = await placemarkFromCoordinates(lat, lon);
+      if (placemarks.isNotEmpty) {
+        return placemarks[0].locality ?? 'Unknown';
+      }
+      return 'Unknown';
+    } catch (e) {
+      throw Exception('Failed to get city name');
+    }
+  }
+}
+3.	Storage Service (for offline caching):
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+
+class StorageService {
+  static const String _weatherKey = 'cached_weather';
+  static const String _lastUpdateKey = 'last_update';
+  static const String _favoriteCitiesKey = 'favorite_cities';
+  
+  // Save weather data
+  Future<void> saveWeatherData(WeatherModel weather) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_weatherKey, json.encode(weather.toJson()));
+    await prefs.setInt(_lastUpdateKey, DateTime.now().millisecondsSinceEpoch);
+  }
+  
+  // Get cached weather data
+  Future<WeatherModel?> getCachedWeather() async {
+    final prefs = await SharedPreferences.getInstance();
+    final weatherJson = prefs.getString(_weatherKey);
+    
+    if (weatherJson != null) {
+      return WeatherModel.fromJson(json.decode(weatherJson));
+    }
+    return null;
+  }
+  
+  // Check if cache is valid (less than 30 minutes old)
+  Future<bool> isCacheValid() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lastUpdate = prefs.getInt(_lastUpdateKey);
+    
+    if (lastUpdate == null) return false;
+    
+    final difference = DateTime.now().millisecondsSinceEpoch - lastUpdate;
+    return difference < 30 * 60 * 1000; // 30 minutes
+  }
+  
+  // Save/get favorite cities
+  Future<void> saveFavoriteCities(List<String> cities) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_favoriteCitiesKey, cities);
+  }
+  
+  Future<List<String>> getFavoriteCities() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getStringList(_favoriteCitiesKey) ?? [];
+  }
+}
+4.	State Management with Provide
+import 'package:flutter/material.dart';
+
+enum WeatherState { initial, loading, loaded, error }
+
+class WeatherProvider extends ChangeNotifier {
+  final WeatherService _weatherService;
+  final LocationService _locationService;
+  final StorageService _storageService;
+  
+  WeatherModel? _currentWeather;
+  List<ForecastModel> _forecast = [];
+  WeatherState _state = WeatherState.initial;
+  String _errorMessage = '';
+  
+  WeatherProvider(
+    this._weatherService,
+    this._locationService,
+    this._storageService,
+  );
+  
+  // Getters
+  WeatherModel? get currentWeather => _currentWeather;
+  List<ForecastModel> get forecast => _forecast;
+  WeatherState get state => _state;
+  String get errorMessage => _errorMessage;
+  
+  // Fetch weather by city
+  Future<void> fetchWeatherByCity(String cityName) async {
+    _state = WeatherState.loading;
+    notifyListeners();
+    
+    try {
+      _currentWeather = await _weatherService.getCurrentWeatherByCity(cityName);
+      _forecast = await _weatherService.getForecast(cityName);
+      await _storageService.saveWeatherData(_currentWeather!);
+      
+      _state = WeatherState.loaded;
+      _errorMessage = '';
+    } catch (e) {
+      _state = WeatherState.error;
+      _errorMessage = e.toString();
+    }
+    
+    notifyListeners();
+  }
+  
+  // Fetch weather by current location
+  Future<void> fetchWeatherByLocation() async {
+    _state = WeatherState.loading;
+    notifyListeners();
+    
+    try {
+      final position = await _locationService.getCurrentLocation();
+      _currentWeather = await _weatherService.getCurrentWeatherByCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+      
+      final cityName = await _locationService.getCityName(
+        position.latitude,
+        position.longitude,
+      );
+      
+      _forecast = await _weatherService.getForecast(cityName);
+      await _storageService.saveWeatherData(_currentWeather!);
+      
+      _state = WeatherState.loaded;
+      _errorMessage = '';
+    } catch (e) {
+      _state = WeatherState.error;
+      _errorMessage = e.toString();
+      
+      // Try to load cached data
+      await loadCachedWeather();
+    }
+    
+    notifyListeners();
+  }
+  
+  // Load cached weather
+  Future<void> loadCachedWeather() async {
+    final cachedWeather = await _storageService.getCachedWeather();
+    if (cachedWeather != null) {
+      _currentWeather = cachedWeather;
+      _state = WeatherState.loaded;
+      notifyListeners();
+    }
+  }
+  
+  // Refresh weather data
+  Future<void> refreshWeather() async {
+    if (_currentWeather != null) {
+      await fetchWeatherByCity(_currentWeather!.cityName);
+    } else {
+      await fetchWeatherByLocation();
+    }
+  }
+}
+Step 6: UI Implementation
+1.	Home Screen:
+class HomeScreen extends StatefulWidget {
+  @override
+  _HomeScreenState createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Load weather on app start
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<WeatherProvider>().fetchWeatherByLocation();
+    });
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: RefreshIndicator(
+        onRefresh: () => context.read<WeatherProvider>().refreshWeather(),
+        child: Consumer<WeatherProvider>(
+          builder: (context, provider, child) {
+            if (provider.state == WeatherState.loading) {
+              return LoadingShimmer();
+            }
+            
+            if (provider.state == WeatherState.error) {
+              return ErrorWidgetCustom(
+                message: provider.errorMessage,
+                onRetry: () => provider.fetchWeatherByLocation(),
+              );
+            }
+            
+            if (provider.currentWeather == null) {
+              return Center(child: Text('No weather data'));
+            }
+            
+            return SingleChildScrollView(
+              physics: AlwaysScrollableScrollPhysics(),
+              child: Column(
+                children: [
+                  CurrentWeatherCard(weather: provider.currentWeather!),
+                  HourlyForecastList(forecasts: provider.forecast),
+                  DailyForecastSection(forecasts: provider.forecast),
+                  WeatherDetailsSection(weather: provider.currentWeather!),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => SearchScreen()),
+        ),
+        child: Icon(Icons.search),
+      ),
+    );
+  }
+}
+2.	Current Weather Card Widget:
+class CurrentWeatherCard extends StatelessWidget {
+  final WeatherModel weather;
+  
+  const CurrentWeatherCard({required this.weather});
+  
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: _getWeatherGradient(weather.mainCondition),
+      ),
+      child: Column(
+        children: [
+          Text(
+            weather.cityName,
+            style: TextStyle(fontSize: 32, color: Colors.white),
+          ),
+          Text(
+            DateFormat('EEEE, MMM d').format(weather.dateTime),
+            style: TextStyle(fontSize: 16, color: Colors.white70),
+          ),
+          SizedBox(height: 20),
+          CachedNetworkImage(
+            imageUrl: 'https://openweathermap.org/img/wn/${weather.icon}@4x.png',
+            height: 120,
+          ),
+          Text(
+            '${weather.temperature.round()}°',
+            style: TextStyle(fontSize: 80, color: Colors.white),
+          ),
+          Text(
+            weather.description.toUpperCase(),
+            style: TextStyle(fontSize: 20, color: Colors.white),
+          ),
+          Text(
+            'Feels like ${weather.feelsLike.round()}°',
+            style: TextStyle(fontSize: 16, color: Colors.white70),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  LinearGradient _getWeatherGradient(String condition) {
+    // Return different gradients based on weather condition
+    switch (condition.toLowerCase()) {
+      case 'clear':
+        return LinearGradient(
+          colors: [Color(0xFF4A90E2), Color(0xFF87CEEB)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        );
+      case 'rain':
+        return LinearGradient(
+          colors: [Color(0xFF4A5568), Color(0xFF718096)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        );
+      // Add more conditions...
+      default:
+        return LinearGradient(
+          colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        );
+    }
+  }
+}
+Step 7: Required Features
+Core Features:
+1.	Current Weather Display:
+-	Temperature, feels like temperature
+-	Weather condition with icon
+-	City name and country
+-	Date and time
+-	Weather description
+2.	Weather Details:
+-	Humidity
+-	Wind speed and direction
+-	Atmospheric pressure
+-	Visibility
+-	UV Index (if available)
+-	Sunrise/Sunset times
+3.	Forecast:
+-	Hourly forecast (next 24 hours)
+-	Daily forecast (next 5-7 days)
+-	Min/max temperatures
+-	Precipitation probability
+4.	Search Functionality:
+-	Search by city name
+-	Search history
+-	Favorite cities (save up to 5 cities)
+-	Recent searches
+5.	Location Services:
+-	Automatic location detection
+-	Manual location selection
+-	Location permission handling
+6.	Offline Support:
+-	Cache last fetched weather
+-	Show cached data when offline
+-	Indicate when data is cached/outdated
+7.	Settings:
+-	Temperature unit (Celsius/Fahrenheit)
+-	Wind speed unit (km/h, m/s, mph)
+-	12/24 hour format
+-	Language selection (optional)
+Step 8: Advanced Features (Bonus)
+1.	Weather Alerts:
+-	Severe weather notifications
+-	Temperature threshold alerts
+2.	Weather Maps:
+-	Radar view
+-	Temperature map
+-	Precipitation map
+3.	Widgets:
+-	Home screen widget (Android)
+-	Today widget (iOS)
+4.	Air Quality Index:
+-	AQI display
+-	Pollutant levels
+-	Health recommendations
+5.	Multiple Locations:
+-	Add multiple favorite cities
+-	Swipe between locations
+-	Compare weather in different cities
+Step 9: Testing Requirements
+Manual Testing:
+Test the following scenarios:
+1.	Network Conditions:
+-	 App works with stable internet
+-	App handles slow internet gracefully
+-	App works offline with cached data
+-	App recovers when connection restored
+2.	Location Permissions:
+-	Permission granted - fetches location weather
+-	Permission denied - shows manual search
+-	Permission denied forever - clear instructions
+3.	Search Functionality:
+-	Valid city name returns weather
+-	Invalid city shows error message
+-	Empty search handled properly
+-	Special characters handled
+4.	API Scenarios:
+-	API responds successfully
+-	API rate limit exceeded
+-	Invalid API key
+-	API timeout
+5.	UI Responsiveness:
+-	Loading states display properly
+-	Error states show helpful messages
+-	Pull-to-refresh works
+-	Dynamic weather backgrounds
+Unit Tests:
+void main() {
+  group('WeatherService Tests', () {
+    test('Parse weather JSON correctly', () {
+      final json = {...}; // Sample JSON
+      final weather = WeatherModel.fromJson(json);
+      expect(weather.temperature, 25.0);
+      expect(weather.cityName, 'Ho Chi Minh City');
+    });
+    
+    test('Handle API error gracefully', () async {
+      // Mock HTTP error
+      expect(
+        () => weatherService.getCurrentWeatherByCity('InvalidCity'),
+        throwsException,
+      );
+    });
+  });
+}
+Step 10: API Key Security
+IMPORTANT: Never commit API keys to GitHub!
+1.	Use environment variables:
+OPENWEATHER_API_KEY=your_actual_key_here
+2.	Create .env.example:
+OPENWEATHER_API_KEY=your_api_key_here
+3.	Update README with setup instructions:
+## API Setup 
+1. Get free API key from OpenWeatherMap 
+2. Copy `.env.example` to `.env` 
+3. Add your API key to `.env`
+
+Outcome of this Practice
+Upon successful completion, you will have:
+-	Real-world API Integration skills with HTTP requests and JSON parsing
+-	Asynchronous Programming expertise with Future and async/await
+-	Location Services implementation experience
+-	State Management proficiency with Provider pattern
+-	Error Handling capabilities for network and user errors
+-	Offline-First approach with caching strategies
+-	Professional UI/UX with dynamic theming based on weather
+-	Security Awareness regarding API key management
+Expected Features:
+-	Current weather display with all details
+-	5-day weather forecast
+-	Hourly forecast
+-	Location-based weather detection
+-	City search functionality
+-	Favorite cities management
+-	Offline support with caching
+-	Pull-to-refresh
+-	Dynamic UI based on weather conditions
+-	Temperature unit conversion
+-	Error handling and loading states
+-	Weather icons/animations
+Way to Submit
+Required 1: On GitHub
+1.	Create a GitHub Repository
+-	Name: flutter_weather_app_[your_name]
+-	README.md must include:
+o	Project description and features
+o	API setup instructions (without exposing keys!)
+o	Screenshots of different weather conditions
+o	How to run the project
+o	Technologies used
+o	Known limitations
+o	Future improvements
+2.	Repository Structure: (Same above)
+3.	Required Screenshots:
+-	Clear/sunny weather
+-	Rainy weather
+-	Cloudy weather
+-	Night mode
+-	Search screen
+-	Forecast screen
+-	Error state
+-	Loading state
+Required 2: Zip Source Code File on E-Learning
+1.	Prepare Your Project:
+-	Remove build/, .dart_tool/, ios/Pods/ folders
+-	REMOVE .env file (keep .env.example)
+-	Include screenshots/ folder
+-	Include test/ folder 
+2.	Create ZIP File: 
+-	Name: WeatherApp_[StudentID]_[Name].zip 
+3.	Upload to E-learning: 
+-	Upload ZIP file
+-	Add comment with:
+o	API you used (OpenWeatherMap, WeatherAPI, etc.)
+o	Extra features implemented
+o	Challenges faced
+o	Testing results
+Submission Checklist:
+-	API integration working correctly
+-	Location services implemented
+-	Search functionality working
+-	Offline caching implemented
+-	All weather details displayed
+-	Forecast (hourly and daily) working
+-	Error handling for all scenarios
+-	Loading states implemented
+-	Pull-to-refresh working
+-	Settings screen functional
+-	No API keys in repository
+-	.env.example included
+-	README complete with setup instructions
+-	Screenshots included
+-	No compilation errors
+-	Tested on Android/iOS
+-	Unit tests written
+Deadline: 11:59 PM - December 5th, 2025
+Grading Criteria:
+-	API Integration (25%): Correct implementation, error handling, data parsing
+-	UI/UX Implementation (25%): Design quality, responsiveness, weather-based themes
+-	Core Features (25%): Current weather, forecast, search, location services
+-	Advanced Features (15%): Offline support, caching, settings, favorites
+-	Code Quality (10%): Clean code, proper structure, state management
+-	Documentation (5%): README, code comments, API setup instructions
+Bonus Points (up to 15%):
+-	Weather animations
+-	Multiple weather API fallback
+-	Weather alerts/notifications
+-	Air quality index integration
+-	Weather maps integration
+-	Home screen widgets
+-	Accessibility features
+-	Comprehensive unit tests
+-	Beautiful custom weather icons
+-	Multi-language support
+Important Notes
+API Rate Limits:
+-	OpenWeatherMap free tier: 1,000 calls/day
+-	Implement caching to reduce API calls
+-	Show cached data when rate limit exceeded
+Testing Your API:
+Before starting, test your API key with this URL: https://api.openweathermap.org/data/2.5/weather?q=London&appid=YOUR_API_KEY&units=metric
+

@@ -1,0 +1,2 @@
+// Weather Detail Item Widget
+
